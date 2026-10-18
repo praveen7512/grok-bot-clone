@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.toRoute
 import com.botclone.android.feature.auth.LoginScreen
 import com.botclone.android.feature.bots.BotListScreen
 import com.botclone.android.feature.bots.CreateBotScreen
@@ -18,7 +17,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object CreateBotRoute
 @Serializable data object SettingsRoute
 @Serializable data class ChatRoute(val botId: String)
-@Serializable data class ScreenRoute(val botId: String, val botName: String, val preIssuedToken: String? = null)
+@Serializable data class ScreenRoute(val botId: String, val botName: String)
 
 @Composable
 fun AppNavHost(navController: NavHostController, startLoggedIn: Boolean) {
@@ -49,12 +48,12 @@ fun AppNavHost(navController: NavHostController, startLoggedIn: Boolean) {
         composable<ChatRoute> {
             ChatScreen(
                 onBack = { navController.popBackStack() },
-                onOpenScreen = { botId, name, token -> navController.navigate(ScreenRoute(botId, name, token)) },
+                onOpenScreen = { botId, name -> navController.navigate(ScreenRoute(botId, name)) },
                 onDeleted = { navController.popBackStack(BotListRoute, inclusive = false) },
             )
         }
-        composable<ScreenRoute> { entry ->
-            ScreenShareScreen(route = entry.toRoute(), onBack = { navController.popBackStack() })
+        composable<ScreenRoute> {
+            ScreenShareScreen(onBack = { navController.popBackStack() })
         }
         composable<SettingsRoute> {
             SettingsScreen(onBack = { navController.popBackStack() })

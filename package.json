@@ -3,14 +3,27 @@
   "version": "0.1.0",
   "private": true,
   "description": "Multi-bot AI assistant platform: isolated context, per-bot persistent memory, per-bot sandbox, powered by the Claude API",
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run build && npm run start:prod -w server",
     "dev": "npm run dev -w server & npm run dev -w web",
     "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "sandbox:build": "docker build -t botclone-sandbox:latest sandbox"
   },
-  "engines": { "node": ">=20.11" },
-  "license": "UNLICENSED"
+  "engines": {
+    "node": ">=20.11"
+  },
+  "license": "UNLICENSED",
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true,
+    "cpu-features": false,
+    "ssh2": false,
+    "protobufjs": false
+  }
 }

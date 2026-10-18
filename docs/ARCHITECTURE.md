@@ -3,7 +3,7 @@
 BotClone is a multi-bot AI assistant platform. Every bot is a fully isolated unit:
 its **own conversation context**, its **own persistent memory**, its **own voice settings**
 and its **own sandboxed computer** (a Docker container with a virtual desktop).
-The language model is Anthropic Claude, called from the backend with `ANTHROPIC_API_KEY`.
+The language model is Anthropic Claude (default `claude-sonnet-5-5`, configurable via `CLAUDE_MODEL`), called from the backend with `ANTHROPIC_API_KEY`.
 
 ## 1. High-level diagram
 
@@ -114,7 +114,8 @@ sequenceDiagram
 ## 4. Context store (per-bot isolation)
 
 * Table `messages(bot_id, role, content_json, summarized)` stores raw Anthropic content blocks
-  (text, `tool_use`, `tool_result`), so a conversation replays exactly.
+  (text, `tool_use`, `tool_result`, and opaque `thinking` / `redacted_thinking` blocks that newer
+  models emit and that must be replayed verbatim next to their `tool_use`), so a conversation replays exactly.
 * Every read/write passes the `bot_id` from the URL; the model never chooses which bot's data it touches.
 * **Auto-save**: the user turn is persisted before the model is called; each assistant
   step and tool result is persisted as soon as it completes. A crash mid-turn loses nothing already produced.
@@ -209,3 +210,34 @@ sequenceDiagram
   daemon via `/var/run/docker.sock` (sibling containers, not nested). Full features.
 * **PaaS without Docker (Railway/Render/Fly app)**: run the app image with `SANDBOX_MODE=subprocess`
   for a live demo (no desktop). See `docs/DEPLOY.md`.
+
+## 12. Design decisions
+
+| Decision | Why |
+|---|---|
+| **VNC over `docker exec socat`** instead of a websockify port in each container | No container ever publishes a port, it works under `SANDBOX_NETWORK=none`, and it works the same whether the server runs on the Mac host or inside compose (Docker Desktop cannot route to container IPs from macOS). The server terminates the browser WebSocket with `ws` and pipes raw RFB bytes, which is what websockify would do. |
+| **Two x11vnc servers (5900 control, 5901 `-viewonly`)** | View-only is enforced server-side, so a view token cannot inject input. |
+| **SQLite (better-sqlite3, WAL)** | Zero-ops, a single file, synchronous transactions make atomic create/rollback simple. All access is keyed by `bot_id` in repositories. Swap the repositories for Postgres when you go multi-tenant. |
+| **SSE for chat, WebSocket only for VNC** | SSE works through every proxy and PaaS and maps naturally to token streaming. |
+| **Bot id comes from the URL, never from the model** | Tools are bound server-side to the route's bot, so a prompt-injected model cannot reach another bot's memory or sandbox. |
+| **Mock LLM** | The product, its tests and demos run without a key. The mock follows the same tool-use protocol as Claude. |
+| **Single-owner auth** | This matches the "personal bot fleet" product. Moving to multi-user means adding a `user_id` column to `bots` and scoping repositories by it. |
+
+## 13. Verification (what was actually exercised)
+
+Automated (`npm test`, 28 tests, mock LLM, fake Docker API): context isolation, memory namespacing and prompt injection, persistence across DB reopen, auto-save on model failure, summarisation boundary, thinking-block replay, container spec (limits, no mounts or ports, hardening), network policies, atomic rollback, Docker-down errors, auto fallback to demo, reconcile, lazy restart, idle reaper, auth tokens, screen-intent detection, and the HTTP API including VNC auth rejection.
+
+Manual end-to-end on a Linux host with a real Docker daemon:
+- Bot create provisions a hardened container in about 0.3 s. `docker inspect` showed 512 MB, 1 CPU, pids 256, CapDrop ALL, no-new-privileges, no binds, no ports, a named volume only, user `bot`, and a healthy status.
+- `run_shell` ran inside only that bot's container. Files persisted across idle-stop and lazy restart.
+- The idle reaper stopped the container, and the next message restarted it.
+- Startup reconcile removed an orphan container and its volume. Bot delete removed the container and volume.
+- A real provisioning failure (missing image) returned a 503 with an actionable message and left no DB row, container or volume.
+- With `SANDBOX_NETWORK=isolated`, the network was internal with ICC off and had no internet.
+- VNC: both control and view tokens returned an `RFB 003.008` greeting through the tunnel, and a token for another bot got a 403. In headless Chrome the noVNC panel rendered the live desktop and switched between view and control.
+- `docker compose up --build` brought up the app and sandbox image. Create, exec, VNC and delete all worked from inside compose.
+- The app image ran in demo mode (no Docker) as a non-root user with a scrubbed environment.
+- Real Anthropic endpoint: reached with an invalid key, and the 401 was mapped to a friendly error. **A successful Claude conversation was not run, because no key was available during development.**
+- UI (headless Chrome): login, create bot, streaming chat, tool cards, memory panel, isolation between two bots, rename, voice toggle persisted per bot, delete, mobile layout.
+
+Not verified: real speech recognition and TTS output (needs a microphone and speakers in a real browser), Safari, Docker Desktop on macOS specifically (the Linux engine was used), and nested Docker on PaaS.

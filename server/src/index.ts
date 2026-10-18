@@ -75,6 +75,10 @@ async function main() {
     trustProxy: config.isProd,
   });
 
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    log.fatal({ err }, err.code === 'EADDRINUSE' ? `Port ${config.PORT} is already in use. Set PORT in .env to a free port.` : 'server error');
+    process.exit(1);
+  });
   server.listen(config.PORT, config.HOST, () => {
     log.info({ url: `http://localhost:${config.PORT}`, llm: llm.name }, 'BotClone server listening');
     if (config.ownerPasswordGenerated) {

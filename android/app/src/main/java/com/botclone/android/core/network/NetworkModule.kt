@@ -33,13 +33,11 @@ object NetworkModule {
     fun provideOkHttp(
         baseUrlInterceptor: BaseUrlInterceptor,
         authInterceptor: AuthInterceptor,
-        envelopeInterceptor: EnvelopeUnwrapInterceptor,
         cookieJar: WebkitCookieJar,
     ): OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         .addInterceptor(baseUrlInterceptor)
         .addInterceptor(authInterceptor)
-        .addInterceptor(envelopeInterceptor)
         .addInterceptor(
             HttpLoggingInterceptor().apply {
                 // BASIC keeps SSE bodies streaming; BODY would buffer them.

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.ClearAll
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Headset
@@ -179,6 +180,11 @@ fun ChatScreen(
                                 text = { Text("Voice settings") },
                                 leadingIcon = { Icon(Icons.Outlined.RecordVoiceOver, null) },
                                 onClick = { menuOpen = false; showVoiceSettings = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Clear chat") },
+                                leadingIcon = { Icon(Icons.Outlined.ClearAll, null) },
+                                onClick = { menuOpen = false; viewModel.clearChat() },
                             )
                             DropdownMenuItem(
                                 text = { Text("Delete bot", color = MaterialTheme.colorScheme.error) },

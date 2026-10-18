@@ -8,8 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -25,20 +23,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Streams a bot reply from `POST {api}/bots/{id}/chat` (Server-Sent Events).
- *
- * Events (SSE `event:` name, or a `type` field in the JSON payload):
- *  - `text`   {"text": "..."}       incremental assistant text
- *  - `tool`   {"name": "run_shell"} bot is using a tool in its sandbox
- *  - `screen` {"token"?: "..."}     "show me your computer" detected, open the screen panel
- *  - `done`   {"messageId"?: ...}   turn finished
- *  - `error`  {"message": "..."} or {"error": {"message": ...}}
- * A bare `data: [DONE]` also ends the stream.
+ * Streams a bot reply from `POST {api}/bots/{id}/chat` (Server-Sent Events, backend `ChatEvent`).
+ * Each event is `data: {"type": ..., ...}`:
+ *  - `text`        {"delta": "..."}                 incremental assistant text
+ *  - `tool_call`   {"name": "run_shell", ...}       bot is using a tool (memory / its sandbox)
+ *  - `screen`      {"session": {token, mode, ...}}  "show me your computer" detected
+ *  - `done`                                         turn finished
+ *  - `error`       {"code": ..., "message": "..."}
+ * `user_saved`, `assistant_saved`, `tool_result`, `summarized` and `: ping` comments are ignored.
  */
 @Singleton
 class ChatStreamClient @Inject constructor(
     private val client: OkHttpClient,
     private val json: Json,
+    private val sessionEvents: SessionEvents,
 ) {
     fun stream(botId: String, message: String): Flow<ChatStreamEvent> = callbackFlow {
         val request = Request.Builder()
@@ -55,14 +53,14 @@ class ChatStreamClient @Inject constructor(
                 val chunk = runCatching { json.decodeFromString<StreamChunkDto>(data) }
                     .getOrElse { StreamChunkDto(text = data) } // plain-text deltas
                 when ((type ?: chunk.type ?: "text").lowercase()) {
-                    "text", "delta", "token", "content_block_delta" -> {
-                        val text = chunk.text ?: chunk.delta
+                    "text" -> {
+                        val text = chunk.delta ?: chunk.text
                         if (!text.isNullOrEmpty()) trySend(ChatStreamEvent.Delta(text))
                     }
-                    "tool", "tool_use" -> trySend(ChatStreamEvent.Tool(chunk.name ?: "tool"))
-                    "screen", "screen_share" -> trySend(ChatStreamEvent.ScreenRequested(chunk.token))
-                    "done", "end", "message_stop" -> {
-                        trySend(ChatStreamEvent.Done(chunk.messageId?.jsonPrimitiveOrNull()?.content))
+                    "tool_call" -> trySend(ChatStreamEvent.Tool(chunk.name ?: "tool"))
+                    "screen" -> trySend(ChatStreamEvent.ScreenRequested(chunk.session?.token))
+                    "done" -> {
+                        trySend(ChatStreamEvent.Done(null))
                         close()
                     }
                     "error" -> close(IOException(chunk.errorMessage() ?: "Stream error"))
@@ -75,9 +73,14 @@ class ChatStreamClient @Inject constructor(
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                val reason = t ?: IOException(
-                    response?.let { "Chat failed (${it.code}): ${it.body?.string()?.take(200).orEmpty()}" } ?: "Chat stream failed",
-                )
+                // Non-2xx before streaming (e.g. 401, 404, validation) -> HttpError carrying the backend message.
+                val reason = when {
+                    response != null && !response.isSuccessful -> {
+                        if (response.code == 401) sessionEvents.notifyExpired()
+                        HttpError(response.code, response.body?.string()?.let(::parseErrorMessage))
+                    }
+                    else -> t ?: IOException("Chat stream failed")
+                }
                 close(reason)
             }
         }
@@ -86,11 +89,5 @@ class ChatStreamClient @Inject constructor(
         awaitClose { source.cancel() }
     }
 
-    private fun JsonElement.jsonPrimitiveOrNull(): JsonPrimitive? = this as? JsonPrimitive
-
-    private fun StreamChunkDto.errorMessage(): String? = message ?: when (val e = error) {
-        is JsonPrimitive -> e.contentOrNull
-        is JsonObject -> (e["message"] as? JsonPrimitive)?.contentOrNull
-        else -> null
-    }
+    private fun StreamChunkDto.errorMessage(): String? = (message as? JsonPrimitive)?.contentOrNull
 }

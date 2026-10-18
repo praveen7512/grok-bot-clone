@@ -1,0 +1,37 @@
+# One-command run:   cp .env.example .env   (add ANTHROPIC_API_KEY + OWNER_PASSWORD)
+#                    docker compose up --build
+# Then open http://localhost:8787
+#
+# The app talks to the host Docker daemon through the socket to create one sibling container
+# per bot. Bot containers themselves get NO host mounts and NO published ports.
+# NOTE: access to docker.sock is root-equivalent on the host; only run this on machines you own.
+services:
+  # Builds the per-bot sandbox image (botclone-sandbox:latest), then exits.
+  sandbox-image:
+    build: ./sandbox
+    image: botclone-sandbox:latest
+    entrypoint: ["true"]
+    restart: "no"
+
+  app:
+    build: .
+    image: botclone-app:latest
+    depends_on:
+      sandbox-image:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      PORT: "8787"
+      DATA_DIR: /data
+      SANDBOX_MODE: ${SANDBOX_MODE:-docker}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8787}:8787"
+    volumes:
+      - botclone-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    # root inside the app container is needed to use the mounted docker.sock on most hosts
+    user: "0:0"
+    restart: unless-stopped
+
+volumes:
+  botclone-data:

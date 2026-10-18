@@ -32,7 +32,7 @@
 
   let rfb;
   try {
-    rfb = new RFB(document.getElementById('screen'), url);
+    rfb = new RFB(document.getElementById('screen'), url, { wsProtocols: ['binary'] });
   } catch (e) {
     status('error', String(e));
     throw e;

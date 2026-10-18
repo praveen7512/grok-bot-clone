@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.botclone.android.core.network.HttpError
+import com.botclone.android.core.network.serverMessage
 import com.botclone.android.domain.model.BotStatus
 
 /** Deterministic colored initial avatar for a bot. */
@@ -54,16 +56,20 @@ fun BotStatus.label(): String = when (this) {
     BotStatus.UNKNOWN -> "Unknown"
 }
 
-/** Human-readable message for repository failures. */
+/** Human-readable message for repository failures; prefers the backend's own error message. */
 fun Throwable.userMessage(): String = when (this) {
-    is retrofit2.HttpException -> when (code()) {
-        401 -> "Wrong password or session expired"
-        404 -> "Not found on server"
-        501 -> "Not supported by this server (screen sharing needs Docker mode)"
-        503 -> "Bot sandbox unavailable right now"
-        else -> "Server error (${code()})"
-    }
+    is retrofit2.HttpException -> serverMessage() ?: httpFallback(code())
+    is HttpError -> serverMessage ?: httpFallback(code)
     is java.net.UnknownHostException, is java.net.ConnectException -> "Can't reach the server. Check the URL in Settings."
     is java.net.SocketTimeoutException -> "Server took too long to respond"
     else -> message ?: "Something went wrong"
+}
+
+private fun httpFallback(code: Int) = when (code) {
+    401 -> "Wrong password or session expired"
+    404 -> "Not found on server"
+    429 -> "Too many attempts. Try again in a minute."
+    501 -> "Not supported by this server (screen sharing needs Docker mode)"
+    503 -> "Bot sandbox unavailable right now"
+    else -> "Server error ($code)"
 }

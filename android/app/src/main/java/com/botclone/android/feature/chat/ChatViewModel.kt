@@ -244,6 +244,12 @@ class ChatViewModel @Inject constructor(
             .onFailure { e -> _state.update { it.copy(error = e.userMessage()) } }
     }
 
+    fun clearChat() = viewModelScope.launch {
+        chat.clearHistory(botId)
+            .onSuccess { _state.update { it.copy(messages = emptyList()) } }
+            .onFailure { e -> _state.update { it.copy(error = e.userMessage()) } }
+    }
+
     fun requestScreen() = viewModelScope.launch {
         _effects.send(ChatEffect.OpenScreen(botId, _state.value.bot?.name ?: "Bot"))
     }

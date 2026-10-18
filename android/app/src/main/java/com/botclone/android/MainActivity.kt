@@ -19,6 +19,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.compose.rememberNavController
 import com.botclone.android.core.datastore.AppPreferences
 import com.botclone.android.core.network.SessionEvents
+import com.botclone.android.data.repository.AuthRepository
 import com.botclone.android.navigation.AppNavHost
 import com.botclone.android.navigation.LoginRoute
 import com.botclone.android.ui.theme.BotCloneTheme
@@ -71,6 +72,7 @@ private fun AppRoot(viewModel: MainViewModel) {
 class MainViewModel @Inject constructor(
     private val prefs: AppPreferences,
     sessionEvents: SessionEvents,
+    auth: AuthRepository,
 ) : ViewModel() {
     /** Captured once so later sign-in/out changes are handled by navigation, not by re-rooting the graph. */
     private val _startLoggedIn = MutableStateFlow<Boolean?>(null)
@@ -89,5 +91,6 @@ class MainViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { sessionEvents.expired.collect { prefs.clearSession() } }
+        viewModelScope.launch { auth.validateSession() }
     }
 }

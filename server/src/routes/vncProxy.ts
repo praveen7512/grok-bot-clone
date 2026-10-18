@@ -47,10 +47,13 @@ export function attachVncProxy(server: Server, d: { auth: AuthService; screen: S
         wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
           d.log.info({ botId, mode: grant.mode }, 'screen session opened');
           const expiry = setTimeout(() => ws.close(4001, 'token expired'), Math.max(0, grant.exp * 1000 - Date.now()));
+          // an open screen session counts as activity, so the idle reaper never stops a watched desktop
+          const keepAlive = setInterval(() => d.orchestrator.touch(botId), 20_000);
           ws.on('message', (data: Buffer) => tunnel.write(data));
           tunnel.on('data', (chunk: Buffer) => ws.readyState === ws.OPEN && ws.send(chunk, { binary: true }));
           const cleanup = () => {
             clearTimeout(expiry);
+            clearInterval(keepAlive);
             tunnel.destroy();
             if (ws.readyState === ws.OPEN) ws.close();
             d.log.info({ botId }, 'screen session closed');

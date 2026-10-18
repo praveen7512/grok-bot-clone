@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bot screen</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0f12; overflow: hidden; }
+  #screen { position: absolute; inset: 0; }
+  /* Off-screen but focusable, so Android shows the soft keyboard and we can forward keys. */
+  #kbd { position: absolute; left: -1000px; top: 0; width: 1px; height: 1px; opacity: 0;
+         font-size: 16px; border: 0; padding: 0; resize: none; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+<script type="module">
+  // Loaded by the Android app from {server}/__botclone_android/novnc/viewer.html, so the page origin
+  // is the backend: the WebSocket below is same-site and carries the owner session cookie.
+  import RFB from './core/rfb.js';
+
+  const params = new URLSearchParams(location.search);
+  const botId = params.get('bot');
+  const token = params.get('token');
+  const viewOnly = params.get('view_only') === '1';
+  const bridge = window.AndroidBridge || { onStatus: (s, m) => console.log('status', s, m) };
+  const status = (s, m = '') => bridge.onStatus(s, m);
+
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${wsProto}//${location.host}/vnc/${encodeURIComponent(botId)}?token=${encodeURIComponent(token)}`;
+
+  let rfb;
+  try {
+    rfb = new RFB(document.getElementById('screen'), url);
+  } catch (e) {
+    status('error', String(e));
+    throw e;
+  }
+  rfb.viewOnly = viewOnly;
+  rfb.scaleViewport = true;      // fit the remote desktop to the phone screen
+  rfb.resizeSession = false;
+  rfb.focusOnClick = false;      // we manage focus for the soft keyboard ourselves
+  rfb.background = '#0e0f12';
+  status('connecting');
+  rfb.addEventListener('connect', () => status('connected'));
+  rfb.addEventListener('disconnect', (e) => status(e.detail.clean ? 'disconnected' : 'error', e.detail.clean ? '' : 'Connection lost'));
+  rfb.addEventListener('securityfailure', (e) => status('error', e.detail.reason || 'Security failure'));
+  rfb.addEventListener('credentialsrequired', () => status('error', 'VNC password required'));
+
+  // ---- Soft keyboard -> RFB keysyms ----
+  const kbd = document.getElementById('kbd');
+  const KEY = { BackSpace: 0xff08, Tab: 0xff09, Return: 0xff0d, Escape: 0xff1b, Delete: 0xffff,
+                Left: 0xff51, Up: 0xff52, Right: 0xff53, Down: 0xff54 };
+  const keysymFor = (ch) => {
+    const c = ch.codePointAt(0);
+    if (c === 10) return KEY.Return;
+    return (c >= 0x20 && c <= 0xff) ? c : 0x01000000 + c;
+  };
+  const tap = (sym) => { if (!viewOnly) rfb.sendKey(sym); };
+
+  kbd.addEventListener('beforeinput', (e) => {
+    if (e.inputType === 'deleteContentBackward') { tap(KEY.BackSpace); e.preventDefault(); }
+    else if (e.inputType === 'insertLineBreak') { tap(KEY.Return); e.preventDefault(); }
+  });
+  // A sentinel keeps the field non-empty so Android IMEs still emit delete events.
+  const SENTINEL = '\u00a0\u00a0';
+  const resetField = () => { kbd.value = SENTINEL; kbd.setSelectionRange(SENTINEL.length, SENTINEL.length); };
+  resetField();
+  kbd.addEventListener('input', () => {
+    const v = kbd.value;
+    if (v.length < SENTINEL.length) {
+      for (let i = v.length; i < SENTINEL.length; i++) tap(KEY.BackSpace);
+    } else {
+      for (const ch of (v.startsWith(SENTINEL) ? v.slice(SENTINEL.length) : v)) tap(keysymFor(ch));
+    }
+    resetField();
+  });
+  kbd.addEventListener('keydown', (e) => {
+    const sym = KEY[e.key === 'Enter' ? 'Return' : e.key === 'ArrowLeft' ? 'Left' : e.key === 'ArrowRight' ? 'Right'
+      : e.key === 'ArrowUp' ? 'Up' : e.key === 'ArrowDown' ? 'Down' : e.key];
+    if (sym && e.key !== 'Backspace') { tap(sym); e.preventDefault(); }
+  });
+
+  // API used by the Android host via evaluateJavascript.
+  window.botclone = {
+    focusKeyboard: () => { kbd.focus(); resetField(); },
+    blurKeyboard: () => { kbd.blur(); },
+    sendCtrlAltDel: () => { if (!viewOnly) rfb.sendCtrlAltDel(); },
+    sendKey: (name) => { if (KEY[name]) tap(KEY[name]); },
+    disconnect: () => rfb.disconnect(),
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext is allowed so the app can reach a local dev backend (http://10.0.2.2, LAN IPs).
+     For production, deploy behind HTTPS and set cleartextTrafficPermitted="false". -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

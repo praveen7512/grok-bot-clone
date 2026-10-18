@@ -11,6 +11,7 @@ export function blocksToText(blocks: ContentBlock[]): string {
     .map((b) => {
       if (b.type === 'text') return b.text;
       if (b.type === 'tool_use') return `[tool ${b.name} ${JSON.stringify(b.input)}]`;
+      if (b.type === 'thinking' || b.type === 'redacted_thinking') return '';
       return `[tool result${b.is_error ? ' (error)' : ''}: ${b.content.slice(0, 500)}]`;
     })
     .join('\n');
@@ -27,7 +28,11 @@ export function sanitizeHistory(msgs: LlmMessage[]): LlmMessage[] {
     if (!out.length && m.role !== 'user') continue;
     if (!out.length && isToolResultMsg(m)) continue;
     const prev = out.at(-1);
-    if (prev && prev.role === m.role) prev.content = [...prev.content, ...m.content];
+    if (prev && prev.role === m.role) {
+      // thinking blocks are only valid at the start of an assistant message; drop them when merging
+      const extra = m.role === 'assistant' ? m.content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking') : m.content;
+      prev.content = [...prev.content, ...extra];
+    }
     else out.push({ role: m.role, content: [...m.content] });
   }
   // ensure every tool_use has a tool_result right after it

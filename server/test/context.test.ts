@@ -38,3 +38,14 @@ test('sanitizeHistory closes dangling tool_use and merges roles', () => {
   assert.equal(out.at(-1)!.role, 'user');
   assert.equal((out.at(-1)!.content[0] as { tool_use_id: string }).tool_use_id, 't1');
 });
+
+test('thinking blocks are kept in front of tool_use for replay', () => {
+  const out = sanitizeHistory([
+    { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'hmm', signature: 'sig' }, { type: 'tool_use', id: 't1', name: 'recall_memory', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'none' }] },
+  ]);
+  assert.equal(out[1]!.content[0]!.type, 'thinking');
+  assert.equal(out[1]!.content[1]!.type, 'tool_use');
+  assert.equal(out.length, 3);
+});

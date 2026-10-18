@@ -1,7 +1,13 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+
+/** Repo root (works from server/src via tsx and from server/dist via node). */
+export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// .env in the repo root wins over one in the current directory; real env vars win over both
+dotenv.config({ path: [path.join(repoRoot, '.env'), path.resolve('.env')], quiet: true });
 
 const bool = z
   .string()
@@ -16,8 +22,8 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
 
   ANTHROPIC_API_KEY: z.string().optional(),
-  CLAUDE_MODEL: z.string().default('claude-sonnet-4-5'),
-  CLAUDE_MAX_TOKENS: z.coerce.number().int().positive().default(2048),
+  CLAUDE_MODEL: z.string().default('claude-sonnet-5-5'),
+  CLAUDE_MAX_TOKENS: z.coerce.number().int().positive().default(8192),
   MOCK_LLM: bool,
 
   OWNER_PASSWORD: z.string().optional(),
@@ -55,7 +61,7 @@ const generatedPassword = env.OWNER_PASSWORD ? undefined : crypto.randomBytes(9)
 export const config = {
   ...env,
   isProd: env.NODE_ENV === 'production',
-  dataDir: path.resolve(env.DATA_DIR),
+  dataDir: path.resolve(repoRoot, env.DATA_DIR),
   useMockLlm: env.MOCK_LLM || !env.ANTHROPIC_API_KEY,
   ownerPassword: env.OWNER_PASSWORD ?? generatedPassword!,
   ownerPasswordGenerated: !env.OWNER_PASSWORD,

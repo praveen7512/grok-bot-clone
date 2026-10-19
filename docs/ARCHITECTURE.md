@@ -204,6 +204,31 @@ sequenceDiagram
    emit `tool` events, persist `tool_result`, loop (max `AGENT_MAX_STEPS`).
 6. Maybe summarise old history. Emit `done`. Release lock.
 
+```mermaid
+sequenceDiagram
+  participant UI
+  participant API as POST /api/bots/:id/chat (SSE)
+  participant DB as SQLite
+  participant C as Claude API
+  participant SB as Bot container
+  UI->>API: user message (session cookie)
+  API->>API: acquire per-bot lock
+  API->>DB: persist user message (auto-save)
+  API->>API: screen-intent check
+  API->>DB: load persona + summary + memories
+  API->>C: stream request (system prompt + history + tools)
+  C-->>API: text deltas
+  API-->>UI: SSE text stream
+  API->>DB: persist assistant message
+  opt tool_use
+    API->>SB: run_shell in this bot's container only
+    API->>DB: memory save/recall (bot_id from server)
+    API->>DB: persist tool_result
+    API->>C: next step with tool_result (max AGENT_MAX_STEPS)
+  end
+  API-->>UI: done, release lock
+```
+
 ## 11. Deployment shapes
 
 * **Mac / VPS with Docker**: `docker compose up --build` — app container talks to the host Docker
